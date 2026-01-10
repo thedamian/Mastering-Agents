@@ -12,7 +12,7 @@ from langchain_experimental.plan_and_execute import (
 ############################
 #   LLM  
 ############################
-llm = ChatOpenAI(model="gpt-4o-mini")
+llm = ChatOpenAI(model="gpt-5-mini")
 
 ############################
 #   BLOBBY WRITER AGENT  
