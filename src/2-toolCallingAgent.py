@@ -1,111 +1,88 @@
-import streamlit as st
-from openai import OpenAI
 import os
-import json
+from typing import List
 
-# Configure OpenAI API with key from environment
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+from dotenv import load_dotenv
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.tools import tool
+from langchain_openai import ChatOpenAI
 
-# Define the weather function tool
+
+@tool
 def get_weather(city: str) -> str:
-    """Get the current weather for a city."""
-    return f"The temperature in {city} is 72°F and raining!"
+	"""Return the current weather for the requested city."""
+	return f"The temperature in {city} is 72°F and raining!"
 
-# Define the function declaration for OpenAI
-tools = [
-    {
-        "type": "function",
-        "function": {
-            "name": "get_weather",
-            "description": "Get the current weather for a city",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "city": {
-                        "type": "string",
-                        "description": "The name of the city"
-                    }
-                },
-                "required": ["city"]
-            }
-        }
-    }
-]
 
-# Streamlit UI
-st.title("🤖 OpenAI Chatbot with Tool Calling")
-st.caption("Ask me about the weather in any city!")
+def run_tool_call_demo(question: str) -> List[str]:
+	"""Run a simple LangChain tool calling demo and return console lines."""
 
-# Initialize chat history
-if "messages" not in st.session_state:
-    st.session_state.messages = []
+	load_dotenv()
 
-# Display chat history
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+	api_key = os.getenv("OPENAI_API_KEY")
+	if not api_key:
+		raise RuntimeError(
+			"Missing OPENAI_API_KEY. Please set it in your environment or .env file."
+		)
 
-# Chat input
-if prompt := st.chat_input("Ask me anything..."):
-    # Add user message to chat history
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
-        st.markdown(prompt)
-    
-    # Send message to OpenAI
-    response = client.chat.completions.create(
-        model="gpt-5-mini",
-        messages=st.session_state.messages,
-        tools=tools,
-        tool_choice="auto"
-    )
-    
-    response_message = response.choices[0].message
-    
-    # Handle function calls
-    if response_message.tool_calls:
-        # Add assistant's response to messages
-        st.session_state.messages.append({
-            "role": "assistant",
-            "content": response_message.content,
-            "tool_calls": [
-                {
-                    "id": tool_call.id,
-                    "type": "function",
-                    "function": {
-                        "name": tool_call.function.name,
-                        "arguments": tool_call.function.arguments
-                    }
-                }
-                for tool_call in response_message.tool_calls
-            ]
-        })
-        
-        # Execute each function call
-        for tool_call in response_message.tool_calls:
-            if tool_call.function.name == "get_weather":
-                args = json.loads(tool_call.function.arguments)
-                city = args["city"]
-                function_response = get_weather(city)
-                
-                # Add function response to messages
-                st.session_state.messages.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "content": function_response
-                })
-        
-        # Get final response from model
-        final_response = client.chat.completions.create(
-            model="gpt-5-mini",
-            messages=st.session_state.messages,
-            tools=tools
-        )
-        assistant_message = final_response.choices[0].message.content
-    else:
-        assistant_message = response_message.content
-    
-    # Display assistant response
-    st.session_state.messages.append({"role": "assistant", "content": assistant_message})
-    with st.chat_message("assistant"):
-        st.markdown(assistant_message)
+	llm = ChatOpenAI(
+		model="gpt-5-nano",
+		temperature=0,
+		api_key=api_key,
+	)
+
+	llm_with_tools = llm.bind_tools([get_weather])
+
+	transcript: List[str] = []
+	transcript.append(f"User: {question}")
+
+	messages: List[SystemMessage | HumanMessage | AIMessage | ToolMessage] = [
+		SystemMessage(
+			content=(
+				"You help travelers prepare for their trips. Whenever someone asks about"
+				" what to wear in a city, ALWAYS call the `get_weather` tool for that"
+				" city before answering. Provide a friendly, concise recommendation"
+				" afterward."
+			)
+		),
+		HumanMessage(content=question),
+	]
+
+	first_response = llm_with_tools.invoke(messages)
+	planning_text = first_response.content or "[planning via tool call]"
+	transcript.append(f"Assistant (planning): {planning_text}")
+
+	if not getattr(first_response, "tool_calls", None):
+		transcript.append("Assistant: (No tool call was made.)")
+		return transcript
+
+	messages.append(first_response)
+
+	for tool_call in first_response.tool_calls:
+		tool_args = tool_call["args"]
+		tool_name = tool_call["name"]
+		result = get_weather.invoke(tool_args)
+		transcript.append(
+			f"Tool `{tool_name}` called with args {tool_args} -> {result}"
+		)
+		messages.append(
+			ToolMessage(content=result, tool_call_id=tool_call["id"])
+		)
+
+	final_response = llm_with_tools.invoke(messages)
+	transcript.append(f"Assistant: {final_response.content}")
+
+	return transcript
+
+
+def main() -> None:
+	question = "I'm going to paris tomorrow. Do I need a raincoat or a winter coat?"
+
+	transcript = run_tool_call_demo(question)
+
+	print("=== LangChain Tool Calling Demo ===")
+	for line in transcript:
+		print(line)
+
+
+if __name__ == "__main__":
+	main()

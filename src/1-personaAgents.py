@@ -1,11 +1,15 @@
-import streamlit as st
+import os
+from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 
+# Load environment variables from .env file
+load_dotenv()
+
 # -----------------------------------------------------------
-# Load API KEY from secrets.toml
+# Load API KEY from .env
 # -----------------------------------------------------------
-OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 # You can choose: "gpt-4.1", "gpt-4o", "gpt-4o-mini", "gpt-5-mini" ...
 llm = ChatOpenAI(
@@ -15,14 +19,14 @@ llm = ChatOpenAI(
 )
 
 # -----------------------------------------------------------
-# 1. Blob Writing Agent
+# 1. blog Writing Agent
 # -----------------------------------------------------------
-blob_prompt = ChatPromptTemplate.from_messages([
-    ("system", "You are a Blob Writing Agent. You write long-form, casual, unstructured content about a topic."),
-    ("user", "Write a blob about: {topic}")
+blog_prompt = ChatPromptTemplate.from_messages([
+    ("system", "You are a blog Writing Agent. You write long-form, casual, unstructured content about a topic."),
+    ("user", "Write a blog about: {topic}")
 ])
 
-blob_agent = blob_prompt | llm
+blog_agent = blog_prompt | llm
 
 # -----------------------------------------------------------
 # 2. SEO Checking Agent
@@ -48,14 +52,14 @@ fact_agent = fact_prompt | llm
 # 4. Manager Agent (Coordinator)
 # -----------------------------------------------------------
 def manager_chain(topic):
-    # Step 1: blob writing
-    blob = blob_agent.invoke({"topic": topic}).content
+    # Step 1: blog writing
+    blog = blog_agent.invoke({"topic": topic}).content
 
     # Step 2: SEO check
-    seo = seo_agent.invoke({"content": blob}).content
+    seo = seo_agent.invoke({"content": blog}).content
 
     # Step 3: fact check
-    facts = fact_agent.invoke({"content": blob}).content
+    facts = fact_agent.invoke({"content": blog}).content
 
     # Step 4: Manager summary
     summary = llm.invoke([
@@ -63,8 +67,8 @@ def manager_chain(topic):
         ("user", f"""
         Topic: {topic}
 
-        === Blob Content ===
-        {blob}
+        === blog Content ===
+        {blog}
 
         === SEO Analysis ===
         {seo}
@@ -76,27 +80,29 @@ def manager_chain(topic):
         """)
     ]).content
 
-    return blob, seo, facts, summary
+    return blog, seo, facts, summary
 
 
 # -----------------------------------------------------------
-# Streamlit UI
+# Use the Manager_Chain to call each of the other "persona" agents
 # -----------------------------------------------------------
-st.title("Multi-Agent Workflow with OpenAI + LangChain")
+topic = "Is AI going to be replacing junior programmers any time soon?"
 
-topic = st.text_input("Enter a topic")
 
-if st.button("Run Workflow"):
-    blob, seo, facts, report = manager_chain(topic)
+print("Get the Manager_Chain to call each of the other 'persona' agents.... ")
+print("Topic we will be making a blog for is: ", topic)
+print("Please wait... This will take a minute or two...")
+print("-----------------------------------------------------------")
+blog, seo, facts, report = manager_chain(topic)
 
-    st.subheader("📝 Blob Content")
-    st.write(blob)
+print("📝 blog Content")
+print(blog)
 
-    st.subheader("🔎 SEO Analysis")
-    st.write(seo)
+print("🔎 SEO Analysis")
+print(seo)
 
-    st.subheader("✔️ Fact Checking")
-    st.write(facts)
+print("✔️ Fact Checking")
+print(facts)
 
-    st.subheader("📘 Final Manager Report")
-    st.write(report)
+print("📘 Final Manager Report")
+print(report)
